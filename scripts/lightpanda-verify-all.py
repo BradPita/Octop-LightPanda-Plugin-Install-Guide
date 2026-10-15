@@ -4,8 +4,8 @@
 # 覆蓋：status / Lightpanda(fetch·navigate·screenshot·close) / Chrome回退 / 跨呼叫(第二條獨立連線)。
 # 用法：  python lightpanda-verify-all.py [out_dir]
 # 環境變數（可被新設備按實際路徑調整）：
-#   OCTOP_LIGHTPANDA_BIN  二進制路徑（預設 /home/agentk/.local/bin/lightpanda）
-#   LP_PLUGIN_DIR           插件目錄（預設 /home/agentk/.octop/plugins/browser-lightpanda）
+#   OCTOP_LIGHTPANDA_BIN  二進制路徑（預設 ~/.local/bin/lightpanda）
+#   LP_PLUGIN_DIR           插件目錄（預設 ~/.octop/plugins/browser-lightpanda）
 #   LP_BUDGET                 總耗時預算秒數（預設 100，<120s 工具上限）
 import os, sys, re, time, asyncio, importlib.util, json
 from collections import Counter
@@ -18,7 +18,7 @@ WS   = sys.argv[1] if len(sys.argv)>1 else os.path.join(os.path.expanduser("~"),
 os.makedirs(WS, exist_ok=True)
 
 # 全域路由環境（與 ~/.octop/env 寫的保持一致；此處用 setdefault，尊重外部已設值）
-os.environ.setdefault("OCTOP_LIGHTPANDA_BIN", "/home/agentk/.local/bin/lightpanda")
+os.environ.setdefault("OCTOP_LIGHTPANDA_BIN", os.path.expanduser("~/.local/bin/lightpanda"))
 os.environ.setdefault("OCTOP_BROWSER_PREFERRED","lightpanda")
 os.environ.setdefault("OCTOP_BROWSER_FALLBACK","chrome")
 os.environ["LIGHTPANDA_DISABLE_TELEMETRY"]="true"   # 關遙測（與全局規則一致）
@@ -33,7 +33,7 @@ def BUDGET_OVER(tag):
     return False
 
 # ── 載入插件模塊 ──
-PDIR = os.environ.get("LP_PLUGIN_DIR","/home/agentk/.octop/plugins/browser-lightpanda")
+PDIR = os.environ.get("LP_PLUGIN_DIR", os.path.expanduser("~/.octop/plugins/browser-lightpanda"))
 spec=importlib.util.spec_from_file_location("lp_main_verify", f"{PDIR}/main.py")
 M=importlib.util.module_from_spec(spec); spec.loader.exec_module(M)
 print(f"[load] 插件模塊載入自 {PDIR} ({T():.1f}s) · 預算={BUDGET:.0f}s · 產物目錄={WS}",flush=True)

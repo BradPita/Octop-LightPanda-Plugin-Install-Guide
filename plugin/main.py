@@ -25,7 +25,7 @@ from pathlib import Path
 from octop_harness.plugins import PluginContext, get_tool_config
 
 # ── 路徑 / 常量 ───────────────────────────────────────────
-DEFAULT_BIN = "/home/agentk/.local/bin/lightpanda"
+DEFAULT_BIN = str(Path.home() / ".local" / "bin" / "lightpanda")   # 亦可用 OCTOP_LIGHTPANDA_BIN 覆寫
 BASE_DIR = Path.home() / ".octop" / "browser-lightpanda"
 SESSIONS_DIR = BASE_DIR / "sessions"
 OUT_DIR = BASE_DIR / "out"
