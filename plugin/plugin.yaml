@@ -1,0 +1,7 @@
+id: browser-lightpanda
+version: 1.0.0
+name: Lightpanda 浏览器
+description: 轻量 headless 浏览器（为 AI 而生）：开网页、读内容/转 Markdown、交互与截图。首选引擎，失败自动回退 Chrome。
+icon: "🐼"
+kind: tool
+entry: main.py
