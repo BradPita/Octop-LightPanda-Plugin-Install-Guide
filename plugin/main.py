@@ -1,17 +1,17 @@
-"""browser-lightpanda —— Octop Lightpanda 浏览器插件（kind=tool）
+"""browser-lightpanda —— Octop Lightpanda 瀏覽器插件（kind=tool）
 
-Lightpanda：为机器/AI 而生的轻量 headless 浏览器（Zig 重写、V8 跑 JS、无图形渲染），
-原生说 CDP。本插件用 venv 里现成的 Playwright 当 CDP 客户端，连到本机起的
-`lightpanda serve`，像操作 Chrome 一样操作它。
+Lightpanda：為機器/AI 而生的輕量 headless 瀏覽器（Zig 重寫、V8 跑 JS、無圖形渲染），
+原生說 CDP。本插件用 venv 裡現成的 Playwright 當 CDP 客戶端，連到本機起的
+`lightpanda serve`，像操作 Chrome 一樣操作它。
 
-全局路由规则（写在 ~/.octop/env，可被 per-tool config 覆盖）：
-  OCTOP_BROWSER_PREFERRED=lightpanda  -> 首选
-  OCTOP_BROWSER_FALLBACK=chrome         -> 失败自动回退(Playwright Chromium)
-  LIGHTPANDA_DISABLE_TELEMETRY=true    -> 关遥测
-  OCTOP_LIGHTPANDA_BIN=...                 -> 二进制造址
+全局路由規則（寫在 ~/.octop/env，可被 per-tool config 覆蓋）：
+  OCTOP_BROWSER_PREFERRED=lightpanda  -> 首選
+  OCTOP_BROWSER_FALLBACK=chrome         -> 失敗自動回退(Playwright Chromium)
+  LIGHTPANDA_DISABLE_TELEMETRY=true    -> 關遙測
+  OCTOP_LIGHTPANDA_BIN=...                 -> 二進制路徑
 
-实现要点：所有阻塞 I/O（子进程、同步版 Playwright）都包在 asyncio.to_thread 里，
-避免在事件迴圈内再跑 asyncio.run 的巢狀迴圈問題。
+實現要點：所有阻塞 I/O（子進程、同步版 Playwright）都包在 asyncio.to_thread 裡，
+避免在事件迴圈內再跑 asyncio.run 的巢狀迴圈問題。
 """
 import asyncio
 import json
@@ -24,8 +24,8 @@ from pathlib import Path
 
 from octop_harness.plugins import PluginContext, get_tool_config
 
-# ── 路径 / 常量 ───────────────────────────────────────────
-DEFAULT_BIN = str(Path.home() / ".local" / "bin" / "lightpanda")   # 亦可用 OCTOP_LIGHTPANDA_BIN 覆寫
+# ── 路徑 / 常量 ───────────────────────────────────────────
+DEFAULT_BIN = "/home/agentk/.local/bin/lightpanda"
 BASE_DIR = Path.home() / ".octop" / "browser-lightpanda"
 SESSIONS_DIR = BASE_DIR / "sessions"
 OUT_DIR = BASE_DIR / "out"
@@ -36,7 +36,7 @@ def _ensure_dir(p: Path) -> Path:
     return p
 
 
-# ── 配置读取（env 全局层 + per-tool config 个人层） ────────────────
+# ── 配置讀取（env 全局層 + per-tool config 個人層） ────────────────
 def _tool_cfg(tool: str) -> dict:
     try:
         return get_tool_config(tool) or {}
@@ -81,7 +81,7 @@ def _telemetry_env() -> dict:
     return env
 
 
-# ── 会话 / 状态文件 ─────────────────────────────────────────────
+# ── 會話 / 狀態文件 ─────────────────────────────────────────────
 def _session_dir(session: str) -> Path:
     s = (session or "default").strip() or "default"
     safe = "".join(ch if (ch.isalnum() or ch in "-_.") else "_" for ch in s) or "default"
@@ -99,7 +99,7 @@ def _read_state(session: str, key: str, default=None):
         return default
 
 
-# ── Lightpanda serve 生命周期 ──────────────────────────────────
+# ── Lightpanda serve 生命週期 ──────────────────────────────────
 def _port_alive(port: int) -> bool:
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=0.4):
@@ -117,10 +117,10 @@ def _free_port() -> int:
 
 
 def _start_serve(session: str) -> int:
-    """確保本会话有活的 lightpanda serve，回傳 port。幂等。"""
+    """確保本會話有活的 lightpanda serve，回傳 port。冪等。"""
     binpath = _bin()
     if not os.path.exists(binpath):
-        raise RuntimeError(f"Lightpanda 二进造址不存在：{binpath}")
+        raise RuntimeError(f"Lightpanda 二進造址不存在：{binpath}")
     st = _read_state(session, "serve")
     if st:
         port, pid = st.get("port"), st.get("pid")
@@ -154,7 +154,7 @@ def _start_serve(session: str) -> int:
         proc.kill()
     except Exception:
         pass
-    raise RuntimeError(f"lightpanda serve 未在 15s 内就绪 (port={port})")
+    raise RuntimeError(f"lightpanda serve 未在 15s 內就緒 (port={port})")
 
 
 def _stop_serve(session: str) -> bool:
@@ -190,13 +190,13 @@ def _cdp_ws(port: int) -> str:
     return f"ws://127.0.0.1:{port}"
 
 
-# ── Playwright 客户端 ─────────────────────────────────────────
+# ── Playwright 客戶端 ─────────────────────────────────────────
 def _sync_playwright():
-    from playwright.sync_api import sync_playwright  # 延迟导入
+    from playwright.sync_api import sync_playwright  # 延遲導入
     return sync_playwright
 
 
-# ── page/context 辅助（跨调用复用） ─────────────────────────────────
+# ── page/context 輔助（跨調用複用） ─────────────────────────────────
 def _ctx_handle(ctx) -> str:
     try:
         return f"ctx-{abs(hash(ctx))}"
@@ -212,8 +212,8 @@ def _page_key(page) -> str:
 
 
 def _is_blank_target(pg) -> bool:
-    """是否为空白/STARTUP target（url≈about:blank）。这类 target 在 Lightpanda 里
-    不能直接 Page.navigate（会报 'No page on the STARTUP session'），要另建真实 target。"""
+    """是否為空白/STARTUP target（url≈about:blank）。這類 target 在 Lightpanda 裡
+    不能直接 Page.navigate（會報 'No page on the STARTUP session'），要另建真實 target。"""
     try:
         u = (getattr(pg, "url", "") or "").strip().lower()
     except Exception:
@@ -222,18 +222,18 @@ def _is_blank_target(pg) -> bool:
 
 
 def _get_or_create_page(browser, session: str):
-    """复用已记录的 page（跨调用），否则新建并记住其 target key。
-    健壮性（实证后加固）：
-      ① 复用匹配若命中的其实是空白/STARTUP target → 跳过它，走下方 new_page()
-         建真正可导航 target（=Target.createTarget）；
-      ② 跨调用重用匹配改用廉价的 url 比对——刻意避免对既有页逐页评估
-         `page.title()`（那是昂贵 JS 求值；实测「第二条独立 CDP 连接」下枚举既有
-         页/取标题最易无响应——正是跨调用会卡的真实点）。再包一层 try，任何异常
-         都优雅退回「新建真实 target」，绝不死等复用。"""
+    """複用已記錄的 page（跨調用），否則新建並記住其 target key。
+    健壯性（實證後加固）：
+      ① 複用匹配若命中的其實是空白/STARTUP target → 跳過它，走下方 new_page()
+         建真正可導航 target（=Target.createTarget）；
+      ② 跨調用重用匹配改用廉價的 url 比對——刻意避免對既有頁逐頁評估
+         `page.title()`（那是昂貴 JS 求值；實測「第二條獨立 CDP 連接」下枚舉既有
+         頁/取標題最易無響應——正是跨調用會卡的真實點）。再包一層 try，任何異常
+         都優雅退回「新建真實 target」，絕不死等複用。"""
     st = _read_state(session, "page")
     target_url = ""
     if isinstance(st, dict) and st.get("key"):
-        # 存的 key 可能是 `url#t:title` 合成式或纯 url；统一抽取其中 url 段做轻比对
+        # 存的 key 可能是 `url#t:title` 合成式或純 url；統一抽取其中 url 段做輕比對
         target_url = str(st.get("key") or "").split("#t:", 1)[0].strip()
     if target_url:
         try:
@@ -242,11 +242,11 @@ def _get_or_create_page(browser, session: str):
                     try:
                         pg_url = str(getattr(pg, "url", "") or "")
                     except Exception:
-                        continue   # 单页取 url 异常：忽略该候选、不中断整圈匹配
+                        continue   # 單頁取 url 異常：忽略該候選、不中斷整圈匹配
                     if pg_url.strip() == target_url and not _is_blank_target(pg):
                         return pg
         except Exception:
-            pass   # 枚举路径出异常：不强求匹配，落下方新建真实 target
+            pass   # 枚舉路徑出異常：不強求匹配，落下方新建真實 target
     ctx = browser.contexts[0] if browser.contexts else browser.new_context()
     page = ctx.new_page()
     try:
@@ -256,7 +256,7 @@ def _get_or_create_page(browser, session: str):
     return page
 
 
-# ── 各动作实装（都在已打开的 page 上） ───────────────────────────────
+# ── 各動作實裝（都在已打開的 page 上） ───────────────────────────────
 def _exec_navigate(pw, browser, page, url=None, wait_until="load", timeout_ms=45000, **_):
     resp = page.goto(url, wait_until=wait_until or "load", timeout=int(timeout_ms or 45000))
     return {
@@ -309,7 +309,7 @@ def _exec_dom(pw, browser, page, mode="text", max_chars=20000, **_):
         else:
             raw = page.evaluate("() => document.body ? document.body.innerText : ''")
     except Exception as e:
-        return {"mode": mode, "length": 0, "truncated": False, "content": "", "error": f"DOM 提取失败：{e}"}
+        return {"mode": mode, "length": 0, "truncated": False, "content": "", "error": f"DOM 提取失敗：{e}"}
     raw = raw or ""
     trunc = len(raw) > max_chars
     return {"mode": mode, "length": len(raw), "truncated": trunc, "content": raw[:max_chars]}
@@ -332,9 +332,9 @@ _EXECUTORS = {
 }
 
 
-# ── 核心：在某个引擎上执行一个动作（阻塞块，走 to_thread） ─────────────
+# ── 核心：在某個引擎上執行一個動作（阻塞塊，走 to_thread） ─────────────
 def _op_block(op_name, engine, session, **kw):
-    """单线程阻塞：启 CDP→连→拿/建 page→执行 executor→收尾。回 result dict。"""
+    """單線程阻塞：啟 CDP→連→拿/建 page→執行 executor→收尾。回 result dict。"""
     sp = _sync_playwright()
     pw = sp().start()
     browser = None
@@ -343,7 +343,7 @@ def _op_block(op_name, engine, session, **kw):
             port = _start_serve(session)
             ws = _cdp_ws(port)
             browser = pw.chromium.connect_over_cdp(ws)
-        else:  # chrome：Playwright 自带 Chromium，直接 launch
+        else:  # chrome：Playwright 自帶 Chromium，直接 launch
             browser = pw.chromium.launch(headless=True, args=["--no-sandbox"])
         page = _get_or_create_page(browser, session)
         result = _EXECUTORS[op_name](pw, browser, page, **kw)
@@ -353,7 +353,7 @@ def _op_block(op_name, engine, session, **kw):
     finally:
         try:
             if browser is not None:
-                browser.close()  # connect_over_cdp→仅断开；launch→杀进程
+                browser.close()  # connect_over_cdp→僅斷開；launch→殺進程
         except Exception:
             pass
         try:
@@ -363,7 +363,7 @@ def _op_block(op_name, engine, session, **kw):
 
 
 async def _run_op(op_name, session, **kw):
-    """按 engine_order 依次尝试（首選→回退）。成功即回。回 (result, meta)。"""
+    """按 engine_order 依次嘗試（首選→回退）。成功即回。回 (result, meta)。"""
     engines = _engine_order(kw.pop("force_engine", ""))
     last_err = None
     for i, engine in enumerate(engines):
@@ -373,10 +373,10 @@ async def _run_op(op_name, session, **kw):
         except Exception as e:
             last_err = f"[{engine}] {type(e).__name__}: {e}"
             continue
-    raise RuntimeError(f"所有引擎都失败（顺序={engines}）。最後錯誤：{last_err}")
+    raise RuntimeError(f"所有引擎都失敗（順序={engines}）。最後錯誤：{last_err}")
 
 
-# ── lp_fetch：CLI 一键抓（跑完 JS），无需常驻；带 lightpanda→chrome 回退 ─
+# ── lp_fetch：CLI 一鍵抓（跑完 JS），無需常駐；帶 lightpanda→chrome 回退 ─
 def _lp_fetch_cli(url: str, out_fmt: str, wait_ms: int, obey_robots: bool, binary: bool):
     binpath = _bin()
     cmd = [binpath, "fetch", "--dump", out_fmt]
@@ -397,17 +397,17 @@ def _lp_fetch_cli(url: str, out_fmt: str, wait_ms: int, obey_robots: bool, binar
 
 async def lp_fetch(url: str, out: str = "markdown", wait_ms: int = 0,
                       obey_robots: bool = False, force_engine: str = ""):
-    """一键抓取网址内容（自动执行全部 JS 后），转换为指定格式返回。
-    最省资源：无需常驻浏览器，一次性起、拿完即收。
+    """一鍵抓取網址內容（自動執行全部 JS 後），轉換為指定格式返回。
+    最省資源：無需常駐瀏覽器，一次性起、拿完即收。
     out: markdown | html | text | pdf | png
-      - markdown 对「把内容喂给 LLM」最干净（结构化文本，无冗余标签）。
-      - html 是原始 DOM 源码（含属性与样式）。
-      - text 是纯文字（适合人工阅读或粗粒度处理）。
-      - pdf/png 是渲染产物：会保存到插件输出目录并回文件路径。
-    wait_ms: 额外的等待毫秒数（应对动态加载或延时内容），默认 0 立即抓取。
-    obey_robots: 是否遵守目标站的 robots.txt 规则，默认 False 快速直取。
-    引擎策略：默认首选 Lightpanda（轻量、快、省内存）；若失败则自动回退到 Chrome(Playwright Chromium)。
-    force_engine: 可选指定强制用某个引擎（如 "lightpanda" 或 "chrome"），留空则按全局规则。
+      - markdown 對「把內容餵給 LLM」最乾淨（結構化文本，無冗餘標籤）。
+      - html 是原始 DOM 源碼（含屬性與樣式）。
+      - text 是純文字（適合人工閱讀或粗粒度處理）。
+      - pdf/png 是渲染產物：會保存到插件輸出目錄並回文件路徑。
+    wait_ms: 額外的等待毫秒數（應對動態加載或延時內容），默認 0 立即抓取。
+    obey_robots: 是否遵守目標站的 robots.txt 規則，默認 False 快速直取。
+    引擎策略：默認首選 Lightpanda（輕量、快、省內存）；若失敗則自動回退到 Chrome(Playwright Chromium)。
+    force_engine: 可選指定強制用某個引擎（如 "lightpanda" 或 "chrome"），留空則按全局規則。
     """
     fmt = (out or "markdown").lower()
     binary = fmt in ("pdf", "png")
@@ -423,7 +423,7 @@ async def lp_fetch(url: str, out: str = "markdown", wait_ms: int = 0,
                     fp.write_bytes(data)
                     return {"engine": engine, "used_fallback": i > 0, "format": fmt, "path": str(fp), "bytes": len(data)}
                 return {"engine": engine, "used_fallback": i > 0, "format": fmt, "length": len(data), "content": data}
-            # chrome 回退分支：用 Playwright 打开并抽取所需格式
+            # chrome 回退分支：用 Playwright 打開並抽取所需格式
             def _chrome():
                 sp = _sync_playwright()
                 pw = sp().start()
@@ -462,17 +462,17 @@ async def lp_fetch(url: str, out: str = "markdown", wait_ms: int = 0,
         except Exception as e:
             last_err = f"[{engine}] {e}"
             continue
-    raise RuntimeError(f"lp_fetch 失败（已尝试顺序={engines}）：{last_err}")
+    raise RuntimeError(f"lp_fetch 失敗（已嘗試順序={engines}）：{last_err}")
 
 
-# ── 对外工具函数（都是 async def） ─────────────────────────────────
+# ── 對外工具函數（都是 async def） ─────────────────────────────────
 async def lp_status():
-    """查询 Lightpanda 插件的运行环境与配置摘要：
-    - 二进制造址、是否存在、版本号
-    - 当前「首選引擎 / 回退引擎」的设置
-    - 遙測开关状态
-    - 会话目录 / 输出目录的位置
-    此工具不实际打开浏览器，开销极小，适合体检与排查。
+    """查詢 Lightpanda 插件的運行環境與配置摘要：
+    - 二進制路徑、是否存在、版本號
+    - 當前「首選引擎 / 回退引擎」的設置
+    - 遙測開關狀態
+    - 會話目錄 / 輸出目錄的位置
+    此工具不實際打開瀏覽器，開銷極小，適合體檢與排查。
     """
     binpath = _bin()
     exists = os.path.exists(binpath)
@@ -482,8 +482,8 @@ async def lp_status():
             pr = subprocess.run([binpath, "version"], capture_output=True, text=True, timeout=10)
             version = (pr.stdout or "").strip() or (pr.stderr or "").strip()
         except Exception as e:
-            version = f"(查版本失败: {e})"
-    tel = os.environ.get("LIGHTPANDA_DISABLE_TELEMETRY", "(未设置)")
+            version = f"(查版本失敗: {e})"
+    tel = os.environ.get("LIGHTPANDA_DISABLE_TELEMETRY", "(未設置)")
     return {
         "binary_path": binpath,
         "binary_exists": exists,
@@ -498,10 +498,10 @@ async def lp_status():
 
 async def lp_navigate(url: str, session: str = "default", wait_until: str = "load",
                           timeout_ms: int = 45000, force_engine: str = ""):
-    """导航到指定 URL，并保持该会话的浏览上下文（方便后续 click/type/screenshot 在同一会话上继续操作）。
-    返回字段包括：最终 URL、页面标题、HTTP 响应码、本次使用的引擎、是否触发了回退、以及 session 名。
-    引擎优先级遵循全局规则（默认 Lightpanda 优先，异常自动回退 Chrome）。
-    wait_until 可取 load|networkidle 等；timeout_ms 控制超时上限。
+    """導航到指定 URL，並保持該會話的瀏覽上下文（方便後續 click/type/screenshot 在同一會話上繼續操作）。
+    返回字段包括：最終 URL、頁面標題、HTTP 響應碼、本次使用的引擎、是否觸發了回退、以及 session 名。
+    引擎優先級遵循全局規則（默認 Lightpanda 優先，異常自動回退 Chrome）。
+    wait_until 可取 load|networkidle 等；timeout_ms 控制超時上限。
     """
     res, meta = await _run_op("navigate", session, url=url, wait_until=wait_until,
                                    timeout_ms=timeout_ms, force_engine=force_engine)
@@ -510,9 +510,9 @@ async def lp_navigate(url: str, session: str = "default", wait_until: str = "loa
 
 async def lp_click(selector: str, session: str = "default", timeout_ms: int = 15000,
                       force_engine: str = ""):
-    """点击当前会话页面上符合指定 CSS 选择器的元素。
-    点击后会自动短暂等待 DOM 稳定，以避免竞态条件；返回值包含被点击的选择器、
-    点击前后的 URL 对比（帮助判断是否发生了跳转）、以及所用引擎信息。
+    """點擊當前會話頁面上符合指定 CSS 選擇器的元素。
+    點擊後會自動短暫等待 DOM 穩定，以避免競態條件；返回值包含被點擊的選擇器、
+    點擊前後的 URL 對比（幫助判斷是否發生了跳轉）、以及所用引擎信息。
     """
     res, meta = await _run_op("click", session, selector=selector,
                                    timeout_ms=timeout_ms, force_engine=force_engine)
@@ -521,10 +521,10 @@ async def lp_click(selector: str, session: str = "default", timeout_ms: int = 15
 
 async def lp_type(selector: str, text: str, session: str = "default", fill: bool = False,
                      timeout_ms: int = 15000, force_engine: str = ""):
-    """向当前会话页面中的指定输入框写入文字内容。
-    通过 fill 参数切换两种模式：True 表示直接设置值（适合某些受控组件或下拉框），
-    False 表示逐字敲入（会触发 input/change 事件链，更接近真实用户的键入行为）。
-    返回写入的选择器、字符数、是否使用填充模式，以及对应引擎标识。
+    """向當前會話頁面中的指定輸入框寫入文字內容。
+    通過 fill 參數切換兩種模式：True 表示直接設置值（適合某些受控組件或下拉框），
+    False 表示逐字敲入（會觸發 input/change 事件鏈，更接近真實用戶的鍵入行為）。
+    返回寫入的選擇器、字符數、是否使用填充模式，以及對應引擎標識。
     """
     res, meta = await _run_op("type", session, selector=selector, text=text, fill=fill,
                                    timeout_ms=timeout_ms, force_engine=force_engine)
@@ -533,12 +533,12 @@ async def lp_type(selector: str, text: str, session: str = "default", fill: bool
 
 async def lp_dom(mode: str = "text", session: str = "default", max_chars: int = 20000,
                    force_engine: str = ""):
-    """获取当前会话页面的结构化内容表示。mode 参数决定输出形态：
-      html     —— 完整 HTML 源码（保留标签与属性，体积较大，适合程序化处理）
-      text      —— 纯文本（去除样式干扰，保持换行结构，阅读体验良好）
-      markdown   —— 语义化 Markdown（区分标题层级、列表项、引用块、行内代码及链接锚点，
-                      是「将网页内容高效喂给大语言模型」的最佳实践选择）
-    max_chars 限制单次返回的最大字符阈值，超出部分会被截断并在结果中标记 truncated=true，防止巨型页面撑爆上下文窗口。
+    """獲取當前會話頁面的結構化內容表示。mode 參數決定輸出形態：
+      html     —— 完整 HTML 源碼（保留標籤與屬性，體積較大，適合程序化處理）
+      text      —— 純文本（去除樣式干擾，保持換行結構，閱讀體驗良好）
+      markdown   —— 語義化 Markdown（區分標題層級、列表項、引用塊、行內代碼及鏈接錨點，
+                      是「將網頁內容高效餵給大語言模型」的最佳實踐選擇）
+    max_chars 限制單次返回的最大字符閾值，超出部分會被截斷並在結果中標記 truncated=true，防止巨型頁面撐爆上下文窗口。
     """
     res, meta = await _run_op("dom", session, mode=mode, max_chars=max_chars,
                                    force_engine=force_engine)
@@ -547,11 +547,11 @@ async def lp_dom(mode: str = "text", session: str = "default", max_chars: int = 
 
 async def lp_screenshot(path: str = "", full_page: bool = False, session: str = "default",
                              force_engine: str = ""):
-    """对当前会话页面执行截图操作并将结果持久化为 PNG 图像文件。
-    full_page 置真时会先垂直滚动至页面底部以捕获整个文档流，然后拼接成一张长图；
-    否则只截取当前视口范围内的可见区域。path 允许自定义最终落盘路径（必须包含文件名后缀），
-    若留空则自动生成带有时间戳的唯一命名并保存到插件专用的输出目录下，避免覆盖历史快照。
-    返回体涵盖实际的绝对路径、二进制尺寸（字节数）、是否全页模式、归属引擎标记等元数据。
+    """對當前會話頁面執行截圖操作並將結果持久化為 PNG 圖像文件。
+    full_page 置真時會先垂直滾動至頁面底部以捕獲整個文檔流，然後拼接成一張長圖；
+    否則只截取當前視口範圍內的可見區域。path 允許自定義最終落盤路徑（必須包含文件名後綴），
+    若留空則自動生成帶有時間戳的唯一命名並保存到插件專用的輸出目錄下，避免覆蓋歷史快照。
+    返回體涵蓋實際的絕對路徑、二進制尺寸（字節數）、是否全頁模式、歸屬引擎標記等元數據。
     """
     res, meta = await _run_op("screenshot", session, path=path, full_page=full_page,
                                    force_engine=force_engine)
@@ -568,9 +568,9 @@ async def lp_screenshot(path: str = "", full_page: bool = False, session: str = 
 
 
 async def lp_close(session: str = "default"):
-    """关闭指定会话并终止其后端的 lightpanda serve 守护进程，从而释放占用的 TCP 端口与物理内存。
-    建议在一次完整的浏览任务结束后主动调用，防止长时间累积多个空闲实例造成资源泄漏。
-    返回该会话对应的 serve 进程是否成功停止的状态码。
+    """關閉指定會話並終止其後端的 lightpanda serve 守護進程，從而釋放佔用的 TCP 端口與物理內存。
+    建議在一次完整的瀏覽任務結束後主動調用，防止長時間累積多個空閒實例造成資源洩漏。
+    返回該會話對應的 serve 進程是否成功停止的狀態碼。
     """
     stopped = _stop_serve(session)
     try:
@@ -580,26 +580,26 @@ async def lp_close(session: str = "default"):
     return {"session": session, "serve_stopped": stopped}
 
 
-# ── 注册入口 ────────────────────────────────────────────────────
+# ── 註冊入口 ────────────────────────────────────────────────────
 def setup(ctx: PluginContext) -> None:
     ctx.tool("lp_status", lp_status,
-             description="查询 Lightpanda 浏览器插件的运行状态：二进制造址/版本、首選與回退引擎、遙測开关、会话与输出目录。")
+             description="查詢 Lightpanda 瀏覽器插件的運行狀態：二進制路徑/版本、首選與回退引擎、遙測開關、會話與輸出目錄。")
     ctx.tool("lp_fetch", lp_fetch,
-             description="一键抓取网址（自动执行 JS 后）并转成 Markdown/HTML/text/PDF/PNG。无需常驻、最省资源；首選 Lightpanda，失敗自動回退 Chrome。",
+             description="一鍵抓取網址（自動執行 JS 後）並轉成 Markdown/HTML/text/PDF/PNG。無需常駐、最省資源；首選 Lightpanda，失敗自動回退 Chrome。",
              config_fields=[
                  {"name": "bin_path", "type": "text", "required": False},
                  {"name": "default_out", "type": "select", "options": ["markdown", "html", "text"], "required": False},
                  {"name": "default_wait_ms", "type": "number", "required": False},
              ])
     ctx.tool("lp_navigate", lp_navigate,
-             description="打开/导航到网址并保持会话状态（供后续 click/type/screenshot 复用）。回最终URL、标题、HTTP状态码与所用引擎。")
+             description="打開/導航到網址並保持會話狀態（供後續 click/type/screenshot 複用）。回最終URL、標題、HTTP狀態碼與所用引擎。")
     ctx.tool("lp_click", lp_click,
-             description="点击当前会话页面上的 CSS 选择器元素。等待 DOM 稳定后回点击前后URL与所用引擎。")
+             description="點擊當前會話頁面上的 CSS 選擇器元素。等待 DOM 穩定後回點擊前後URL與所用引擎。")
     ctx.tool("lp_type", lp_type,
-             description="向当前会话输入框写入文字。fill=True 直接赋值，False 逐字敲入触发事件。适用于表单填写。")
+             description="向當前會話輸入框寫入文字。fill=True 直接賦值，False 逐字敲入觸發事件。適用於表單填寫。")
     ctx.tool("lp_dom", lp_dom,
-             description="获取当前会话页面的结构化内容：mode 支持 html/text/markdown 三种形态，其中 markdown 最适合高效喂给 LLM。超大页面可按 max_chars 截断并标注 truncated 标志。")
+             description="獲取當前會話頁面的結構化內容：mode 支持 html/text/markdown 三種形態，其中 markdown 最適合高效餵給 LLM。超大頁面可按 max_chars 截斷並標註 truncated 標誌。")
     ctx.tool("lp_screenshot", lp_screenshot,
-             description="对当前会话页面执行截图并保存为 PNG 图像文件。full_page 置真时可滚动整页拼接成长图；否则仅截取当前视口范围。可自定义落盘路径，留空则自动生成时间戳命名。")
+             description="對當前會話頁面執行截圖並保存為 PNG 圖像文件。full_page 置真時可滾動整頁拼接成長圖；否則僅截取當前視口範圍。可自定義落盤路徑，留空則自動生成時間戳命名。")
     ctx.tool("lp_close", lp_close,
-             description="关闭指定会话并终止其后端的 lightpanda serve 进程，释放占用的端口与内存资源。建议在完整浏览任务结束后调用。")
+             description="關閉指定會話並終止其後端的 lightpanda serve 進程，釋放佔用的端口與內存資源。建議在完整瀏覽任務結束後調用。")
